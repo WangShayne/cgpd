@@ -148,9 +148,16 @@ func buildEndpoint(baseURL string) (string, error) {
 	}
 
 	path := strings.TrimRight(u.Path, "/")
+
+	// Gemini OpenAI-compatible: /v1beta/openai -> /v1beta/openai/chat/completions
+	if strings.HasSuffix(path, "/openai") {
+		return baseURL + "/chat/completions", nil
+	}
+	// Standard OpenAI: /v1 -> /v1/chat/completions
 	if path == "/v1" {
 		return baseURL + "/chat/completions", nil
 	}
+	// Default: append /v1/chat/completions
 	return baseURL + "/v1/chat/completions", nil
 }
 
