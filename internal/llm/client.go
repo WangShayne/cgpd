@@ -26,6 +26,14 @@ func NewClient(cfg config.LLMConfig) (Client, error) {
 		return nil, errors.New("llm.provider is required (set in .cgpd.yaml or env CGPD_LLM_PROVIDER)")
 	}
 
+	lang := strings.TrimSpace(strings.ToLower(cfg.Language))
+	if lang == "" {
+		lang = "en"
+	}
+	if lang != "en" && lang != "zh" {
+		return nil, fmt.Errorf("unsupported llm.language %q (supported: en, zh)", lang)
+	}
+
 	switch provider {
 	case "openai", "openai-compatible":
 		baseURL := strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/")
@@ -44,10 +52,11 @@ func NewClient(cfg config.LLMConfig) (Client, error) {
 			return nil, err
 		}
 		return &openaiClient{
-			baseURL: baseURL,
-			apiKey:  apiKey,
-			model:   model,
-			http:    &http.Client{Timeout: 75 * time.Second},
+			baseURL:  baseURL,
+			apiKey:   apiKey,
+			model:    model,
+			language: lang,
+			http:     &http.Client{Timeout: 75 * time.Second},
 		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported llm.provider %q", provider)
@@ -55,10 +64,11 @@ func NewClient(cfg config.LLMConfig) (Client, error) {
 }
 
 type openaiClient struct {
-	baseURL string
-	apiKey  string
-	model   string
-	http    *http.Client
+	baseURL  string
+	apiKey   string
+	model    string
+	language string
+	http     *http.Client
 }
 
 type chatMessage struct {
@@ -83,26 +93,48 @@ type chatResponse struct {
 
 const maxResponseBytes = 2 << 20 // 2 MiB
 
-const commitPrompt = `You are a Git commit message generator.
+var commitPrompts = map[string]string{
+	"en": `You are a Git commit message generator.
 Rules:
 - Output ONLY the commit subject line, no quotes, no markdown
 - Use imperative mood (Add, Fix, Refactor, Update)
 - Maximum 72 characters
-- Be specific to the actual changes`
+- Be specific to the actual changes
+- Response in English`,
+	"zh": `你是一个 Git commit 信息生成器。
+规则：
+- 仅输出 commit 主题行，不要引号，不要 markdown
+- 使用祈使语气（添加、修复、重构、更新）
+- 最多 72 个字符
+- 具体描述实际的变更内容
+- 使用简体中文回复`,
+}
 
-const docsPrompt = `You are a changelog generator.
+var docsPrompts = map[string]string{
+	"en": `You are a changelog generator.
 Rules:
 - Output valid Markdown
 - Start with a brief summary section
 - Group changes by category (API, Config, Docs, Tests) when applicable
-- Include behavior changes and migration notes if needed`
+- Include behavior changes and migration notes if needed
+- Response in English`,
+	"zh": `你是一个变更日志生成器。
+规则：
+- 输出有效的 Markdown 格式
+- 以简要概述开头
+- 按类别分组（API、配置、文档、测试）
+- 包含行为变更和迁移说明（如需要）
+- 使用简体中文回复`,
+}
 
 func (c *openaiClient) GenerateCommitMessage(ctx context.Context, diff string) (string, error) {
-	return c.chat(ctx, commitPrompt, "Staged diff:\n\n"+diff, 0.2)
+	prompt := commitPrompts[c.language]
+	return c.chat(ctx, prompt, "Staged diff:\n\n"+diff, 0.2)
 }
 
 func (c *openaiClient) GenerateDocs(ctx context.Context, diff string) (string, error) {
-	return c.chat(ctx, docsPrompt, "Staged diff:\n\n"+diff, 0.2)
+	prompt := docsPrompts[c.language]
+	return c.chat(ctx, prompt, "Staged diff:\n\n"+diff, 0.2)
 }
 
 func buildEndpoint(baseURL string) (string, error) {

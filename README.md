@@ -2,8 +2,8 @@
 
 > Create Git Push Docs - 使用 LLM 从暂存变更生成 commit 信息和变更文档
 
-[![CI](https://github.com/YOUR_USERNAME/cgpd/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_USERNAME/cgpd/actions/workflows/ci.yml)
-[![Release](https://github.com/YOUR_USERNAME/cgpd/actions/workflows/release.yml/badge.svg)](https://github.com/YOUR_USERNAME/cgpd/actions/workflows/release.yml)
+[![CI](https://github.com/WangShayne/cgpd/actions/workflows/ci.yml/badge.svg)](https://github.com/WangShayne/cgpd/actions/workflows/ci.yml)
+[![Release](https://github.com/WangShayne/cgpd/actions/workflows/release.yml/badge.svg)](https://github.com/WangShayne/cgpd/actions/workflows/release.yml)
 
 ## 功能特性
 
@@ -11,47 +11,33 @@
 - 📝 生成详细的 Markdown 格式变更文档
 - 🔧 支持配置文件和环境变量两种配置方式
 - 🌐 兼容 OpenAI API 及所有兼容接口
+- 🌍 支持多语言输出（English / 简体中文）
 
 ## 安装
 
-### 从 Release 下载
-
-从 [Releases](https://github.com/YOUR_USERNAME/cgpd/releases) 页面下载对应平台的二进制文件。
+### 一键安装（推荐）
 
 **Linux / macOS:**
 
 ```bash
-# Linux amd64
-curl -LO https://github.com/YOUR_USERNAME/cgpd/releases/latest/download/cgpd-linux-amd64
-chmod +x cgpd-linux-amd64
-sudo mv cgpd-linux-amd64 /usr/local/bin/cgpd
-
-# macOS arm64 (Apple Silicon)
-curl -LO https://github.com/YOUR_USERNAME/cgpd/releases/latest/download/cgpd-darwin-arm64
-chmod +x cgpd-darwin-arm64
-sudo mv cgpd-darwin-arm64 /usr/local/bin/cgpd
-
-# macOS amd64 (Intel)
-curl -LO https://github.com/YOUR_USERNAME/cgpd/releases/latest/download/cgpd-darwin-amd64
-chmod +x cgpd-darwin-amd64
-sudo mv cgpd-darwin-amd64 /usr/local/bin/cgpd
+curl -fsSL https://raw.githubusercontent.com/WangShayne/cgpd/main/install.sh | sh
 ```
 
 **Windows (PowerShell):**
 
 ```powershell
-# 下载
-Invoke-WebRequest -Uri "https://github.com/YOUR_USERNAME/cgpd/releases/latest/download/cgpd-windows-amd64.exe" -OutFile "cgpd.exe"
-
-# 移动到 PATH 目录（以管理员身份运行）
-Move-Item cgpd.exe C:\Windows\System32\
+irm https://raw.githubusercontent.com/WangShayne/cgpd/main/install.ps1 | iex
 ```
+
+### 手动下载
+
+从 [Releases](https://github.com/WangShayne/cgpd/releases) 页面下载对应平台的二进制文件。
 
 ### 从源码构建
 
 ```bash
 # 需要 Go 1.22+
-git clone https://github.com/YOUR_USERNAME/cgpd.git
+git clone https://github.com/WangShayne/cgpd.git
 cd cgpd
 go build -o cgpd .
 ```
@@ -59,7 +45,7 @@ go build -o cgpd .
 ### 使用 Go Install
 
 ```bash
-go install github.com/YOUR_USERNAME/cgpd@latest
+go install github.com/WangShayne/cgpd@latest
 ```
 
 ## 配置
@@ -68,7 +54,9 @@ cgpd 支持两种配置方式，优先级：环境变量 > 配置文件。
 
 ### 方式一：配置文件
 
-在项目根目录（或任意父目录）创建 `.cgpd.yaml`：
+配置文件搜索顺序：
+1. 当前目录 `./.config.yaml`
+2. 用户目录 `~/.cgpd/.config.yaml`
 
 ```yaml
 llm:
@@ -76,6 +64,21 @@ llm:
   base_url: "https://api.openai.com"
   api_key: "sk-your-api-key-here"
   model: "gpt-4-turbo"
+  language: "en"                  # en (English) 或 zh (简体中文)
+```
+
+**全局配置（推荐）：**
+
+```bash
+mkdir -p ~/.cgpd
+cat > ~/.cgpd/.config.yaml << 'EOF'
+llm:
+  provider: "openai"
+  base_url: "https://api.openai.com"
+  api_key: "sk-your-api-key-here"
+  model: "gpt-4-turbo"
+  language: "zh"
+EOF
 ```
 
 ### 方式二：环境变量
@@ -98,6 +101,7 @@ export CGPD_LLM_BASE_URL="https://api.openai.com"
 | `llm.base_url`   | `CGPD_LLM_BASE_URL`, `LLM_BASE_URL`, `OPENAI_BASE_URL`  |
 | `llm.api_key`    | `CGPD_LLM_API_KEY`, `OPENAI_API_KEY`, `LLM_API_KEY`     |
 | `llm.model`      | `CGPD_LLM_MODEL`, `LLM_MODEL`, `OPENAI_MODEL`           |
+| `llm.language`   | `CGPD_LANGUAGE`, `CGPD_LLM_LANGUAGE`                    |
 
 ### 使用第三方 API
 
@@ -181,6 +185,12 @@ docs/history/2025-12-26-143052.md
 ## 迁移说明
 
 需要在环境变量中配置 `JWT_SECRET`，否则服务将无法启动。
+
+## Changed Files
+
+- `internal/auth/jwt.go`
+- `internal/api/handlers.go`
+- `config/config.go`
 ```
 
 ### 命令行选项
@@ -248,14 +258,18 @@ cgpd/
 │   │   └── config.go            # 配置加载
 │   ├── git/
 │   │   └── git.go               # Git 操作
-│   └── llm/
-│       └── client.go            # LLM 客户端
+│   ├── llm/
+│   │   └── client.go            # LLM 客户端
+│   └── spinner/
+│       └── spinner.go           # 进度显示
 ├── docs/
 │   └── history/                 # 变更文档目录
 ├── .github/
 │   └── workflows/
 │       ├── ci.yml               # CI 工作流
 │       └── release.yml          # 发布工作流
+├── install.sh                   # Linux/macOS 安装脚本
+├── install.ps1                  # Windows 安装脚本
 └── README.md
 ```
 
@@ -263,7 +277,7 @@ cgpd/
 
 ```bash
 # 克隆仓库
-git clone https://github.com/YOUR_USERNAME/cgpd.git
+git clone https://github.com/WangShayne/cgpd.git
 cd cgpd
 
 # 安装依赖
@@ -302,11 +316,21 @@ git add .
 git add src/main.go
 ```
 
-### Q: 提示 "config file .cgpd.yaml not found"
+### Q: 提示 "config not found"
 
 创建配置文件或设置环境变量：
 
 ```bash
+# 方式一：全局配置
+mkdir -p ~/.cgpd
+cat > ~/.cgpd/.config.yaml << 'EOF'
+llm:
+  provider: "openai"
+  api_key: "sk-xxx"
+  model: "gpt-4-turbo"
+EOF
+
+# 方式二：环境变量
 export CGPD_LLM_PROVIDER="openai"
 export OPENAI_API_KEY="sk-xxx"
 export CGPD_LLM_MODEL="gpt-4-turbo"
@@ -322,6 +346,20 @@ llm:
   base_url: "http://localhost:11434/v1"
   api_key: "ollama"
   model: "llama3"
+```
+
+### Q: 如何卸载？
+
+**Linux / macOS:**
+
+```bash
+sudo rm /usr/local/bin/cgpd
+```
+
+**Windows:**
+
+```powershell
+Remove-Item "$env:LOCALAPPDATA\Programs\cgpd" -Recurse -Force
 ```
 
 ## License

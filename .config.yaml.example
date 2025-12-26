@@ -1,0 +1,6 @@
+llm:
+  provider: "openai"
+  base_url: "https://api.openai.com"
+  api_key: "sk-your-api-key-here"
+  model: "gpt-4-turbo"
+  language: "en"  # en (English) or zh (简体中文)

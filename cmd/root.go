@@ -12,6 +12,7 @@ import (
 	"cgpd/internal/config"
 	"cgpd/internal/git"
 	"cgpd/internal/llm"
+	"cgpd/internal/spinner"
 
 	"github.com/spf13/cobra"
 )
@@ -50,13 +51,25 @@ func run(cmd *cobra.Command, _ []string) error {
 	}
 
 	if flagDocs {
+		files, err := git.StagedFiles(ctx)
+		if err != nil {
+			return err
+		}
+		spinMsg := "Generating documentation..."
+		if cfg.LLM.Language == "zh" {
+			spinMsg = "正在生成文档..."
+		}
+		spin := spinner.New(os.Stderr, spinMsg)
+		spin.Start()
 		markdown, err := client.GenerateDocs(ctx, diff)
+		spin.Stop()
 		if err != nil {
 			return err
 		}
 		if strings.TrimSpace(markdown) == "" {
 			return errors.New("LLM returned empty docs")
 		}
+		markdown = appendFilesSection(markdown, files, cfg.LLM.Language)
 		path, err := writeDocsFile(markdown)
 		if err != nil {
 			return err
@@ -65,7 +78,14 @@ func run(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
+	spinMsg := "Generating commit message..."
+	if cfg.LLM.Language == "zh" {
+		spinMsg = "正在生成提交信息..."
+	}
+	spin := spinner.New(os.Stderr, spinMsg)
+	spin.Start()
 	msg, err := client.GenerateCommitMessage(ctx, diff)
+	spin.Stop()
 	if err != nil {
 		return err
 	}
@@ -111,4 +131,26 @@ func writeDocsFile(content string) (string, error) {
 	}
 
 	return path, nil
+}
+
+func appendFilesSection(markdown string, files []string, lang string) string {
+	if len(files) == 0 {
+		return markdown
+	}
+
+	title := "## Changed Files\n\n"
+	if strings.ToLower(strings.TrimSpace(lang)) == "zh" {
+		title = "## 变更文件\n\n"
+	}
+
+	var sb strings.Builder
+	sb.WriteString(strings.TrimRight(markdown, "\n"))
+	sb.WriteString("\n\n")
+	sb.WriteString(title)
+	for _, f := range files {
+		sb.WriteString("- `")
+		sb.WriteString(f)
+		sb.WriteString("`\n")
+	}
+	return sb.String()
 }

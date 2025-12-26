@@ -19,33 +19,32 @@ type LLMConfig struct {
 	BaseURL  string `mapstructure:"base_url"`
 	APIKey   string `mapstructure:"api_key"`
 	Model    string `mapstructure:"model"`
+	Language string `mapstructure:"language"`
 }
 
 func Load() (Config, error) {
 	v := viper.New()
-	v.SetConfigName(".cgpd")
+	v.SetConfigName(".config")
 	v.SetConfigType("yaml")
-	v.AutomaticEnv()
 
 	cwd, err := os.Getwd()
 	if err != nil {
 		return Config{}, fmt.Errorf("get working directory: %w", err)
 	}
+	v.AddConfigPath(cwd)
 
-	dir := cwd
-	for {
-		v.AddConfigPath(dir)
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
-		}
-		dir = parent
+	home, err := os.UserHomeDir()
+	if err == nil {
+		v.AddConfigPath(filepath.Join(home, ".cgpd"))
 	}
 
 	_ = v.BindEnv("llm.provider", "CGPD_LLM_PROVIDER", "LLM_PROVIDER")
 	_ = v.BindEnv("llm.base_url", "CGPD_LLM_BASE_URL", "LLM_BASE_URL", "OPENAI_BASE_URL")
 	_ = v.BindEnv("llm.model", "CGPD_LLM_MODEL", "LLM_MODEL", "OPENAI_MODEL")
 	_ = v.BindEnv("llm.api_key", "CGPD_LLM_API_KEY", "OPENAI_API_KEY", "LLM_API_KEY")
+	_ = v.BindEnv("llm.language", "CGPD_LANGUAGE", "CGPD_LLM_LANGUAGE")
+
+	v.SetDefault("llm.language", "en")
 
 	readErr := v.ReadInConfig()
 	var notFound viper.ConfigFileNotFoundError
@@ -62,7 +61,7 @@ func Load() (Config, error) {
 		if strings.TrimSpace(cfg.LLM.Provider) == "" &&
 			strings.TrimSpace(cfg.LLM.APIKey) == "" &&
 			strings.TrimSpace(cfg.LLM.Model) == "" {
-			return Config{}, errors.New("config file .cgpd.yaml not found and no LLM env vars set (try CGPD_LLM_PROVIDER, CGPD_LLM_MODEL, OPENAI_API_KEY)")
+			return Config{}, errors.New("config not found: create ~/.cgpd/.config.yaml or ./.config.yaml, or set env vars (CGPD_LLM_PROVIDER, CGPD_LLM_MODEL, OPENAI_API_KEY)")
 		}
 	}
 
