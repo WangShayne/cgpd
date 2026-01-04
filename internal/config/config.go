@@ -11,7 +11,8 @@ import (
 )
 
 type Config struct {
-	LLM LLMConfig `mapstructure:"llm"`
+	LLM      LLMConfig      `mapstructure:"llm"`
+	Security SecurityConfig `mapstructure:"security"`
 }
 
 type LLMConfig struct {
@@ -20,6 +21,12 @@ type LLMConfig struct {
 	APIKey   string `mapstructure:"api_key"`
 	Model    string `mapstructure:"model"`
 	Language string `mapstructure:"language"`
+}
+
+type SecurityConfig struct {
+	Enabled            bool     `mapstructure:"enabled"`
+	AdditionalPatterns []string `mapstructure:"additional_patterns"`
+	ExcludePatterns    []string `mapstructure:"exclude_patterns"`
 }
 
 func Load() (Config, error) {
@@ -45,6 +52,7 @@ func Load() (Config, error) {
 	_ = v.BindEnv("llm.language", "CGPD_LANGUAGE", "CGPD_LLM_LANGUAGE")
 
 	v.SetDefault("llm.language", "en")
+	v.SetDefault("security.enabled", true)
 
 	readErr := v.ReadInConfig()
 	var notFound viper.ConfigFileNotFoundError

@@ -185,6 +185,21 @@ cgpd --docs
 # Output: docs/history/2025-12-26-143052.md
 ```
 
+### Manage Git Hooks
+
+```bash
+# Install Git hook for automatic commit message generation
+cgpd hooks install
+
+# Check hook status
+cgpd hooks list
+
+# Uninstall hook
+cgpd hooks uninstall
+```
+
+After installing the hook, commit messages will be automatically generated when you run `git commit` (without `-m`).
+
 <details>
 <summary>Example Generated Changelog</summary>
 
@@ -252,6 +267,23 @@ git push --tags
 ```
 
 ### Git Hooks Integration
+
+**Automatic Installation (Recommended):**
+
+```bash
+# Install Git hook for automatic commit message generation
+cgpd hooks install
+
+# Check hook status
+cgpd hooks list
+
+# Uninstall hook
+cgpd hooks uninstall
+```
+
+After installation, commit messages will be automatically generated when you run `git commit` without the `-m` flag.
+
+**Manual Installation:**
 
 Create `.git/hooks/prepare-commit-msg`:
 

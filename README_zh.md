@@ -185,6 +185,21 @@ cgpd --docs
 # 输出：docs/history/2025-12-26-143052.md
 ```
 
+### 管理 Git Hooks
+
+```bash
+# 安装 Git hook 实现自动生成提交信息
+cgpd hooks install
+
+# 查看 hook 状态
+cgpd hooks list
+
+# 卸载 hook
+cgpd hooks uninstall
+```
+
+安装 hook 后，运行 `git commit`（不使用 `-m`）时将自动生成提交信息。
+
 <details>
 <summary>生成的文档示例</summary>
 
@@ -252,6 +267,23 @@ git push --tags
 ```
 
 ### Git Hooks 集成
+
+**自动安装（推荐）：**
+
+```bash
+# 安装 Git hook 实现自动生成提交信息
+cgpd hooks install
+
+# 查看 hook 状态
+cgpd hooks list
+
+# 卸载 hook
+cgpd hooks uninstall
+```
+
+安装后，当您运行 `git commit` 而不使用 `-m` 标志时，将自动生成提交信息。
+
+**手动安装：**
 
 创建 `.git/hooks/prepare-commit-msg`：
 

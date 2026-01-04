@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -12,12 +13,16 @@ import (
 	"cgpd/internal/config"
 	"cgpd/internal/git"
 	"cgpd/internal/llm"
+	"cgpd/internal/security"
 	"cgpd/internal/spinner"
 
 	"github.com/spf13/cobra"
 )
 
-var flagDocs bool
+var (
+	flagDocs         bool
+	flagSkipSecurity bool
+)
 
 var rootCmd = &cobra.Command{
 	Use:          "cgpd",
@@ -40,6 +45,29 @@ func run(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
+	// Get staged files first for both security check and docs
+	files, err := git.StagedFiles(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Check for sensitive files unless skipped
+	if !flagSkipSecurity && cfg.Security.Enabled {
+		sensitiveFiles, err := security.CheckSensitiveFiles(cfg.Security, files)
+		if err != nil {
+			return err
+		}
+
+		if len(sensitiveFiles) > 0 {
+			if !confirmSensitiveFiles(sensitiveFiles, cfg.LLM.Language) {
+				if cfg.LLM.Language == "zh" {
+					return errors.New("操作已取消")
+				}
+				return errors.New("operation cancelled by user")
+			}
+		}
+	}
+
 	diff, err := git.StagedDiff(ctx)
 	if err != nil {
 		return err
@@ -51,10 +79,6 @@ func run(cmd *cobra.Command, _ []string) error {
 	}
 
 	if flagDocs {
-		files, err := git.StagedFiles(ctx)
-		if err != nil {
-			return err
-		}
 		spinMsg := "Generating documentation..."
 		if cfg.LLM.Language == "zh" {
 			spinMsg = "正在生成文档..."
@@ -106,7 +130,36 @@ func Execute() {
 
 func init() {
 	rootCmd.Flags().BoolVar(&flagDocs, "docs", false, "Generate detailed Markdown changelog")
+	rootCmd.Flags().BoolVar(&flagSkipSecurity, "skip-security", false, "Skip sensitive file detection")
 }
+
+func confirmSensitiveFiles(files []string, lang string) bool {
+	var msg, prompt string
+
+	if lang == "zh" {
+		msg = "\n⚠️  检测到以下敏感文件将被提交:\n"
+		prompt = "\n确认继续提交? (y/N): "
+	} else {
+		msg = "\n⚠️  Sensitive files detected:\n"
+		prompt = "\nContinue anyway? (y/N): "
+	}
+
+	fmt.Fprint(os.Stderr, msg)
+	for _, f := range files {
+		fmt.Fprintf(os.Stderr, "  - %s\n", f)
+	}
+	fmt.Fprint(os.Stderr, prompt)
+
+	reader := bufio.NewReader(os.Stdin)
+	response, err := reader.ReadString('\n')
+	if err != nil {
+		return false
+	}
+
+	response = strings.TrimSpace(strings.ToLower(response))
+	return response == "y" || response == "yes"
+}
+
 
 func writeDocsFile(content string) (string, error) {
 	dir := filepath.Join(".", "docs", "history")
