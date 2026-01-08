@@ -20,8 +20,10 @@ import (
 )
 
 var (
-	flagDocs         bool
-	flagSkipSecurity bool
+	flagDocs           bool
+	flagSkipSecurity   bool
+	flagNonInteractive bool
+	flagAssumeYes      bool
 )
 
 var rootCmd = &cobra.Command{
@@ -45,6 +47,11 @@ func run(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
+	ignoreRules, err := security.LoadIgnoreFile(cfg.Security.IgnoreFile)
+	if err != nil {
+		return fmt.Errorf("load ignore file: %w", err)
+	}
+
 	// Get staged files first for both security check and docs
 	files, err := git.StagedFiles(ctx)
 	if err != nil {
@@ -53,13 +60,22 @@ func run(cmd *cobra.Command, _ []string) error {
 
 	// Check for sensitive files unless skipped
 	if !flagSkipSecurity && cfg.Security.Enabled {
-		sensitiveFiles, err := security.CheckSensitiveFiles(cfg.Security, files)
+		filesForCheck := security.FilterPaths(files, ignoreRules)
+		sensitiveFiles, err := security.CheckSensitiveFiles(cfg.Security, filesForCheck)
+
 		if err != nil {
 			return err
 		}
 
 		if len(sensitiveFiles) > 0 {
-			if !confirmSensitiveFiles(sensitiveFiles, cfg.LLM.Language) {
+			nonInteractive := flagNonInteractive || os.Getenv("CGPD_NON_INTERACTIVE") == "1"
+			assumeYes := flagAssumeYes || os.Getenv("CGPD_YES") == "1"
+
+			ok, err := confirmSensitiveFiles(sensitiveFiles, cfg.LLM.Language, nonInteractive, assumeYes)
+			if err != nil {
+				return err
+			}
+			if !ok {
 				if cfg.LLM.Language == "zh" {
 					return errors.New("操作已取消")
 				}
@@ -71,6 +87,37 @@ func run(cmd *cobra.Command, _ []string) error {
 	diff, err := git.StagedDiff(ctx)
 	if err != nil {
 		return err
+	}
+
+	if !flagSkipSecurity && cfg.Security.Enabled && cfg.Security.ScanDiff {
+		nonInteractive := flagNonInteractive || os.Getenv("CGPD_NON_INTERACTIVE") == "1"
+		assumeYes := flagAssumeYes || os.Getenv("CGPD_YES") == "1"
+
+		findings := security.FilterFindings(security.ScanStagedDiff(diff), ignoreRules)
+		if len(findings) > 0 {
+			ok, err := confirmDiffFindings(findings, cfg.LLM.Language, nonInteractive, assumeYes)
+			if err != nil {
+				return err
+			}
+			if !ok {
+				if cfg.LLM.Language == "zh" {
+					return errors.New("操作已取消")
+				}
+				return errors.New("operation cancelled by user")
+			}
+		}
+	}
+
+	llmDiff := diff
+	const maxLLMDiffBytes = 300000
+	const maxLLMDiffLines = 6000
+	if len(llmDiff) > maxLLMDiffBytes || strings.Count(llmDiff, "\n") > maxLLMDiffLines {
+		stat, err := git.StagedDiffStat(ctx)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stderr, "cgpd: staged diff too large (%d bytes); using 'git diff --staged --stat' summary\n", len(llmDiff))
+		llmDiff = "NOTE: staged diff too large; using --stat summary.\n\n" + stat
 	}
 
 	client, err := llm.NewClient(cfg.LLM)
@@ -85,7 +132,7 @@ func run(cmd *cobra.Command, _ []string) error {
 		}
 		spin := spinner.New(os.Stderr, spinMsg)
 		spin.Start()
-		markdown, err := client.GenerateDocs(ctx, diff)
+		markdown, err := client.GenerateDocs(ctx, llmDiff)
 		spin.Stop()
 		if err != nil {
 			return err
@@ -108,12 +155,12 @@ func run(cmd *cobra.Command, _ []string) error {
 	}
 	spin := spinner.New(os.Stderr, spinMsg)
 	spin.Start()
-	msg, err := client.GenerateCommitMessage(ctx, diff)
+	msg, err := client.GenerateCommitMessage(ctx, llmDiff)
 	spin.Stop()
 	if err != nil {
 		return err
 	}
-	msg = strings.TrimSpace(msg)
+	msg = normalizeCommitSubject(msg)
 	if msg == "" {
 		return errors.New("LLM returned an empty commit message")
 	}
@@ -131,11 +178,24 @@ func Execute() {
 func init() {
 	rootCmd.Flags().BoolVar(&flagDocs, "docs", false, "Generate detailed Markdown changelog")
 	rootCmd.Flags().BoolVar(&flagSkipSecurity, "skip-security", false, "Skip sensitive file detection")
+	rootCmd.Flags().BoolVar(&flagNonInteractive, "non-interactive", false, "Fail instead of prompting when checks need confirmation")
+	rootCmd.Flags().BoolVar(&flagAssumeYes, "yes", false, "Assume yes for prompts (use with care)")
 }
 
-func confirmSensitiveFiles(files []string, lang string) bool {
-	var msg, prompt string
+func confirmSensitiveFiles(files []string, lang string, nonInteractive bool, assumeYes bool) (bool, error) {
+	if assumeYes {
+		return true, nil
+	}
 
+	if nonInteractive {
+		joined := strings.Join(files, ", ")
+		if lang == "zh" {
+			return false, fmt.Errorf("非交互模式下检测到敏感文件: %s（使用 --yes 继续，或使用 --skip-security 跳过）", joined)
+		}
+		return false, fmt.Errorf("sensitive files detected in non-interactive mode: %s (use --yes to continue or --skip-security)", joined)
+	}
+
+	var msg, prompt string
 	if lang == "zh" {
 		msg = "\n⚠️  检测到以下敏感文件将被提交:\n"
 		prompt = "\n确认继续提交? (y/N): "
@@ -153,13 +213,57 @@ func confirmSensitiveFiles(files []string, lang string) bool {
 	reader := bufio.NewReader(os.Stdin)
 	response, err := reader.ReadString('\n')
 	if err != nil {
-		return false
+		return false, fmt.Errorf("read input: %w", err)
 	}
 
 	response = strings.TrimSpace(strings.ToLower(response))
-	return response == "y" || response == "yes"
+	return response == "y" || response == "yes", nil
 }
 
+func confirmDiffFindings(findings []security.Finding, lang string, nonInteractive bool, assumeYes bool) (bool, error) {
+	if assumeYes {
+		return true, nil
+	}
+
+	if nonInteractive {
+		if lang == "zh" {
+			return false, errors.New("非交互模式下检测到疑似密钥/敏感内容（使用 --yes 继续，或使用 --skip-security 跳过）")
+		}
+		return false, errors.New("potential secrets detected in non-interactive mode (use --yes to continue or --skip-security)")
+	}
+
+	var msg, prompt string
+	if lang == "zh" {
+		msg = "\n⚠️  检测到以下疑似密钥/敏感内容（来自暂存 diff 的新增行）:\n"
+		prompt = "\n确认继续? (y/N): "
+	} else {
+		msg = "\n⚠️  Potential secrets detected (from added staged diff lines):\n"
+		prompt = "\nContinue anyway? (y/N): "
+	}
+
+	fmt.Fprint(os.Stderr, msg)
+	for _, f := range findings {
+		loc := f.File
+		if f.Line > 0 {
+			loc = fmt.Sprintf("%s:%d", f.File, f.Line)
+		}
+		fp := f.Fingerprint
+		if len(fp) > 12 {
+			fp = fp[:12]
+		}
+		fmt.Fprintf(os.Stderr, "  - %s (%s) %s [%s]\n", loc, f.RuleID, f.Preview, fp)
+	}
+	fmt.Fprint(os.Stderr, prompt)
+
+	reader := bufio.NewReader(os.Stdin)
+	response, err := reader.ReadString('\n')
+	if err != nil {
+		return false, fmt.Errorf("read input: %w", err)
+	}
+
+	response = strings.TrimSpace(strings.ToLower(response))
+	return response == "y" || response == "yes", nil
+}
 
 func writeDocsFile(content string) (string, error) {
 	dir := filepath.Join(".", "docs", "history")
@@ -206,4 +310,44 @@ func appendFilesSection(markdown string, files []string, lang string) string {
 		sb.WriteString("`\n")
 	}
 	return sb.String()
+}
+
+func normalizeCommitSubject(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+
+	if i := strings.IndexByte(s, '\n'); i != -1 {
+		s = s[:i]
+	}
+
+	s = strings.TrimSpace(s)
+	s = strings.Trim(s, "\"'`")
+	s = strings.TrimSpace(s)
+
+	s = strings.TrimPrefix(s, "- ")
+	s = strings.TrimPrefix(s, "* ")
+	s = strings.TrimPrefix(s, "# ")
+
+	s = strings.Join(strings.Fields(s), " ")
+	rs := []rune(s)
+	if len(rs) <= 72 {
+		return s
+	}
+	return truncateRunes(s, 72)
+}
+
+func truncateRunes(s string, max int) string {
+	rs := []rune(s)
+	if max <= 0 {
+		return ""
+	}
+	if len(rs) <= max {
+		return s
+	}
+	if max <= 3 {
+		return string(rs[:max])
+	}
+	return string(rs[:max-3]) + "..."
 }

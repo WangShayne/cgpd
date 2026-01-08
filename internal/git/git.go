@@ -38,3 +38,17 @@ func StagedFiles(ctx context.Context) ([]string, error) {
 	}
 	return files, nil
 }
+
+func StagedDiffStat(ctx context.Context) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", "diff", "--staged", "--stat")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("git diff --staged --stat: %w\n%s", err, strings.TrimSpace(string(out)))
+	}
+
+	stat := strings.TrimSpace(string(out))
+	if stat == "" {
+		return "", errors.New("no staged changes found (use 'git add' first)")
+	}
+	return stat + "\n", nil
+}
