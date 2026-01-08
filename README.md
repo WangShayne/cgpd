@@ -89,6 +89,14 @@ llm:
   api_key: "sk-your-api-key-here"
   model: "gpt-4-turbo"
   language: "en"                  # en (English) or zh (简体中文)
+
+security:
+  enabled: true
+  scan_diff: false                 # scan staged diff added lines
+  ignore_file: ".cgpdignore"       # optional
+  baseline_file: ".cgpd.baseline.json"  # optional
+  additional_patterns: []          # filename patterns
+  exclude_patterns: []             # filename patterns
 ```
 
 **Global Configuration (Recommended):**
@@ -188,17 +196,56 @@ cgpd --docs
 ### Manage Git Hooks
 
 ```bash
-# Install Git hook for automatic commit message generation
+# Install prepare-commit-msg hook for automatic commit message generation
 cgpd hooks install
+
+# If a hook already exists, preserve it and run cgpd after it
+cgpd hooks install --chain
+
+# Or replace it (creates a backup)
+cgpd hooks install --force
 
 # Check hook status
 cgpd hooks list
 
 # Uninstall hook
 cgpd hooks uninstall
+
+# Optional: block commits with a pre-commit security scan
+cgpd hooks pre-commit install
+
+# Optional: validate commit subject line length
+cgpd hooks commit-msg install
 ```
 
 After installing the hook, commit messages will be automatically generated when you run `git commit` (without `-m`).
+
+### Security Scan
+
+cgpd can block commits that include sensitive filenames (default) and optionally scan newly added staged diff lines for potential secrets.
+
+```bash
+# Run checks manually
+cgpd security scan --diff
+
+# Manage a baseline for existing findings
+cgpd security baseline write
+cgpd security baseline check
+```
+
+Ignore file example (`.cgpdignore`):
+
+```text
+# ignore paths
+path:secrets/*
+*.pem
+
+# ignore a rule
+rule:github-token
+
+# ignore a specific finding
+fingerprint:0123456789abcdef...
+```
 
 <details>
 <summary>Example Generated Changelog</summary>
@@ -240,9 +287,12 @@ Usage:
   cgpd [flags]
 
 Flags:
-      --docs      Generate detailed Markdown changelog
-  -h, --help      Show help
-  -v, --version   Show version
+      --docs              Generate detailed Markdown changelog
+      --skip-security     Skip sensitive file detection
+      --non-interactive   Fail instead of prompting when checks need confirmation
+      --yes               Assume yes for prompts (use with care)
+  -h, --help              Show help
+  -v, --version           Show version
 ```
 
 ## Workflow Examples
@@ -271,14 +321,26 @@ git push --tags
 **Automatic Installation (Recommended):**
 
 ```bash
-# Install Git hook for automatic commit message generation
+# Install prepare-commit-msg hook for automatic commit message generation
 cgpd hooks install
+
+# If a hook already exists, preserve it and run cgpd after it
+cgpd hooks install --chain
+
+# Or replace it (creates a backup)
+cgpd hooks install --force
 
 # Check hook status
 cgpd hooks list
 
 # Uninstall hook
 cgpd hooks uninstall
+
+# Optional: block commits with a pre-commit security scan
+cgpd hooks pre-commit install
+
+# Optional: validate commit subject line length
+cgpd hooks commit-msg install
 ```
 
 After installation, commit messages will be automatically generated when you run `git commit` without the `-m` flag.

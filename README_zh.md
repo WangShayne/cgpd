@@ -89,6 +89,14 @@ llm:
   api_key: "sk-your-api-key-here"
   model: "gpt-4-turbo"
   language: "zh"                  # en (English) 或 zh (简体中文)
+
+security:
+  enabled: true
+  scan_diff: false                 # 扫描暂存 diff 新增行
+  ignore_file: ".cgpdignore"       # 可选
+  baseline_file: ".cgpd.baseline.json"  # 可选
+  additional_patterns: []          # 文件名模式
+  exclude_patterns: []             # 文件名模式
 ```
 
 **全局配置（推荐）：**
@@ -188,17 +196,56 @@ cgpd --docs
 ### 管理 Git Hooks
 
 ```bash
-# 安装 Git hook 实现自动生成提交信息
+# 安装 prepare-commit-msg hook，实现自动生成提交信息
 cgpd hooks install
+
+# 如果已存在 hook，保留原 hook 并在其后运行 cgpd
+cgpd hooks install --chain
+
+# 或直接替换（会创建备份）
+cgpd hooks install --force
 
 # 查看 hook 状态
 cgpd hooks list
 
 # 卸载 hook
 cgpd hooks uninstall
+
+# 可选：安装 pre-commit 安全扫描（检测敏感文件/疑似密钥并阻断提交）
+cgpd hooks pre-commit install
+
+# 可选：安装 commit-msg 校验（校验主题行为空或超过 72 字符时阻断）
+cgpd hooks commit-msg install
 ```
 
 安装 hook 后，运行 `git commit`（不使用 `-m`）时将自动生成提交信息。
+
+### 安全扫描
+
+cgpd 默认会检测敏感文件名，并可选地扫描暂存 diff 的新增行以发现疑似密钥/敏感内容（需要在配置中启用 `security.scan_diff: true`）。
+
+```bash
+# 手动运行安全检查
+cgpd security scan --diff
+
+# 管理 baseline（用于逐步接入旧仓库）
+cgpd security baseline write
+cgpd security baseline check
+```
+
+忽略文件示例（`.cgpdignore`）：
+
+```text
+# 忽略路径
+path:secrets/*
+*.pem
+
+# 忽略某条规则
+rule:github-token
+
+# 忽略某个具体命中
+fingerprint:0123456789abcdef...
+```
 
 <details>
 <summary>生成的文档示例</summary>
@@ -240,9 +287,12 @@ Usage:
   cgpd [flags]
 
 Flags:
-      --docs      生成详细的 Markdown 变更文档
-  -h, --help      显示帮助信息
-  -v, --version   显示版本信息
+      --docs              生成详细的 Markdown 格式变更文档
+      --skip-security     跳过敏感文件检测
+      --non-interactive   非交互模式：需要确认时直接失败
+      --yes               自动确认所有提示（谨慎使用）
+  -h, --help              显示帮助信息
+  -v, --version           显示版本信息
 ```
 
 ## 工作流示例
@@ -271,14 +321,26 @@ git push --tags
 **自动安装（推荐）：**
 
 ```bash
-# 安装 Git hook 实现自动生成提交信息
+# 安装 prepare-commit-msg hook，实现自动生成提交信息
 cgpd hooks install
+
+# 如果已存在 hook，保留原 hook 并在其后运行 cgpd
+cgpd hooks install --chain
+
+# 或直接替换（会创建备份）
+cgpd hooks install --force
 
 # 查看 hook 状态
 cgpd hooks list
 
 # 卸载 hook
 cgpd hooks uninstall
+
+# 可选：安装 pre-commit 安全扫描（检测敏感文件/疑似密钥并阻断提交）
+cgpd hooks pre-commit install
+
+# 可选：安装 commit-msg 校验（校验主题行为空或超过 72 字符时阻断）
+cgpd hooks commit-msg install
 ```
 
 安装后，当您运行 `git commit` 而不使用 `-m` 标志时，将自动生成提交信息。
