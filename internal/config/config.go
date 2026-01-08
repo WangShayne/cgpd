@@ -27,6 +27,10 @@ type SecurityConfig struct {
 	Enabled            bool     `mapstructure:"enabled"`
 	AdditionalPatterns []string `mapstructure:"additional_patterns"`
 	ExcludePatterns    []string `mapstructure:"exclude_patterns"`
+
+	ScanDiff     bool   `mapstructure:"scan_diff"`
+	IgnoreFile   string `mapstructure:"ignore_file"`
+	BaselineFile string `mapstructure:"baseline_file"`
 }
 
 func Load() (Config, error) {
@@ -53,6 +57,9 @@ func Load() (Config, error) {
 
 	v.SetDefault("llm.language", "en")
 	v.SetDefault("security.enabled", true)
+	v.SetDefault("security.scan_diff", false)
+	v.SetDefault("security.ignore_file", ".cgpdignore")
+	v.SetDefault("security.baseline_file", ".cgpd.baseline.json")
 
 	readErr := v.ReadInConfig()
 	var notFound viper.ConfigFileNotFoundError

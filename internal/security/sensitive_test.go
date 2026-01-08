@@ -8,11 +8,11 @@ import (
 
 func TestCheckSensitiveFiles(t *testing.T) {
 	tests := []struct {
-		name           string
-		cfg            config.SecurityConfig
-		files          []string
-		expectedCount  int
-		expectedFiles  []string
+		name          string
+		cfg           config.SecurityConfig
+		files         []string
+		expectedCount int
+		expectedFiles []string
 	}{
 		{
 			name: "detect .env file",
@@ -159,9 +159,9 @@ func TestIsSensitiveFile(t *testing.T) {
 	excludePatterns := []string{"example.env"}
 
 	tests := []struct {
-		name       string
-		filename   string
-		expected   bool
+		name     string
+		filename string
+		expected bool
 	}{
 		{"exact match", ".env", true},
 		{"wildcard match", "api.key", true},
